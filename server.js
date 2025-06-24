@@ -138,5 +138,3 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`伺服器運行在端口 ${PORT}`);
 });
-  console.log(`伺服器運行在端口 ${PORT}`);
-});
