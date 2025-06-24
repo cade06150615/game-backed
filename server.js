@@ -26,8 +26,8 @@ app.get('/', (req, res) => {
 
 const waitingPlayers = [];
 const rooms = new Map();
-const bulletLifetime = 2000; // 與前端一致
-const maxBulletsPerPlayer = 20; // 限制每個玩家的子彈數量
+const bulletLifetime = 2000;
+const maxBulletsPerPlayer = 20;
 
 const generateRoomId = () => {
     return Math.random().toString(36).substring(2, 10);
@@ -36,9 +36,10 @@ const generateRoomId = () => {
 io.on('connection', (socket) => {
     console.log(`玩家 ${socket.id} 連線，來源: ${socket.handshake.headers.origin}`);
 
-    socket.on('joinMatchmaking', () => {
+    socket.on('joinMatchmaking', ({ name }) => {
+        socket.playerName = name || '玩家';
         waitingPlayers.push(socket);
-        console.log(`玩家 ${socket.id} 加入匹配隊列`);
+        console.log(`玩家 ${socket.id} (${socket.playerName}) 加入匹配隊列`);
 
         if (waitingPlayers.length >= 2) {
             const player1 = waitingPlayers.shift();
@@ -47,20 +48,17 @@ io.on('connection', (socket) => {
             const roomId = generateRoomId();
             const gameState = {
                 players: {
-                    [player1.id]: { x: 100, y: 500, angle: 0, health: 100, score: 0 },
-                    [player2.id]: { x: 1000, y: 500, angle: 180, health: 100, score: 0 }
+                    [player1.id]: { x: 100, y: 500, angle: 0, health: 100, score: 0, name: player1.playerName },
+                    [player2.id]: { x: 1000, y: 500, angle: 180, health: 100, score: 0, name: player2.playerName }
                 },
                 bullets: []
             };
 
             rooms.set(roomId, { player1, player2, gameState });
-
             player1.join(roomId);
             player2.join(roomId);
             io.to(roomId).emit('matchFound', { roomId, players: gameState.players });
-            console.log(`房間 ${roomId} 創建，玩家 ${player1.id} 對 ${player2.id}`);
-
-            // 啟動房間的遊戲更新迴圈
+            console.log(`房間 ${roomId} 創建，玩家 ${player1.id} (${player1.playerName}) 對 ${player2.id} (${player2.playerName})`);
             startGameLoop(roomId);
         } else {
             let progress = 0;
@@ -74,12 +72,11 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('playerMove', ({ x, y, angle }) => {
+    socket.on('playerMove', ({ x, y, angle, name }) => {
         const room = Array.from(rooms.entries()).find(([_, r]) => r.player1.id === socket.id || r.player2.id === socket.id);
         if (room) {
             const [roomId, gameRoom] = room;
-            gameRoom.gameState.players[socket.id] = { ...gameRoom.gameState.players[socket.id], x, y, angle };
-            // 移除即時廣播，改由遊戲迴圈統一更新
+            gameRoom.gameState.players[socket.id] = { ...gameRoom.gameState.players[socket.id], x, y, angle, name: name || socket.playerName };
         }
     });
 
@@ -87,7 +84,6 @@ io.on('connection', (socket) => {
         const room = Array.from(rooms.entries()).find(([_, r]) => r.player1.id === socket.id || r.player2.id === socket.id);
         if (room) {
             const [roomId, gameRoom] = room;
-            // 檢查玩家子彈數量
             const playerBullets = gameRoom.gameState.bullets.filter(b => b.owner === socket.id);
             if (playerBullets.length >= maxBulletsPerPlayer) return;
             
@@ -100,7 +96,7 @@ io.on('connection', (socket) => {
                 createdAt: Date.now()
             };
             gameRoom.gameState.bullets.push(bullet);
-            console.log(`玩家 ${socket.id} 射擊: x=${x}, y=${y}, angle=${angle}`);
+            console.log(`玩家 ${socket.id} (${socket.playerName}) 射擊: x=${x}, y=${y}, angle=${angle}`);
         }
     });
 
@@ -112,7 +108,7 @@ io.on('connection', (socket) => {
             if (target) {
                 target.health = Math.max(0, target.health - damage);
                 gameRoom.gameState.players[socket.id].score += 10;
-                console.log(`子彈擊中: 目標 ${targetId}, 血量 ${target.health}, 得分 ${gameRoom.gameState.players[socket.id].score}`);
+                console.log(`子彈擊中: 目標 ${targetId} (${target.name}), 血量 ${target.health}, 得分 ${gameRoom.gameState.players[socket.id].score}`);
                 if (target.health <= 0) {
                     const winner = targetId === gameRoom.player1.id ? gameRoom.player2.id : gameRoom.player1.id;
                     io.to(roomId).emit('gameOver', {
@@ -130,7 +126,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log(`玩家 ${socket.id} 斷線`);
+        console.log(`玩家 ${socket.id} (${socket.playerName}) 斷線`);
         const room = Array.from(rooms.entries()).find(([_, r]) => r.player1.id === socket.id || r.player2.id === socket.id);
         if (room) {
             const [roomId, gameRoom] = room;
@@ -150,7 +146,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// 遊戲更新迴圈
 function startGameLoop(roomId) {
     const gameRoom = rooms.get(roomId);
     if (!gameRoom) return;
@@ -162,7 +157,6 @@ function startGameLoop(roomId) {
         }
 
         const { gameState } = gameRoom;
-        // 更新子彈位置並清理過期子彈
         for (let i = gameState.bullets.length - 1; i >= 0; i--) {
             const bullet = gameState.bullets[i];
             bullet.x += bullet.velocityX;
@@ -172,21 +166,19 @@ function startGameLoop(roomId) {
                 console.log(`移除子彈: x=${bullet.x}, y=${bullet.y}, 原因: 超時`);
                 continue;
             }
-            // 簡單邊界檢查（假設遊戲區域為 1200x800）
             if (bullet.x < 0 || bullet.x > 1200 || bullet.y < 0 || bullet.y > 800) {
                 gameState.bullets.splice(i, 1);
                 console.log(`移除子彈: x=${bullet.x}, y=${bullet.y}, 原因: 超出邊界`);
                 continue;
             }
-            // 碰撞檢測
             Object.keys(gameState.players).forEach(playerId => {
                 if (playerId !== bullet.owner) {
                     const player = gameState.players[playerId];
                     if (Math.hypot(bullet.x - player.x, bullet.y - player.y) < 30) {
                         player.health = Math.max(0, player.health - 10);
                         gameState.players[bullet.owner].score += 10;
+                        console.log(`後端子彈擊中: 玩家 ${playerId} (${player.name}), 血量 ${player.health}, 得分 ${gameState.players[bullet.owner].score}`);
                         gameState.bullets.splice(i, 1);
-                        console.log(`後端子彈擊中: 玩家 ${playerId}, 血量 ${player.health}, 得分 ${gameState.players[bullet.owner].score}`);
                         if (player.health <= 0) {
                             const winner = playerId === gameRoom.player1.id ? gameRoom.player2.id : gameRoom.player1.id;
                             io.to(roomId).emit('gameOver', {
@@ -206,7 +198,7 @@ function startGameLoop(roomId) {
         }
 
         io.to(roomId).emit('gameStateUpdate', gameState);
-    }, 1000 / 60); // 60 FPS 更新
+    }, 1000 / 60);
 }
 
 const PORT = process.env.PORT || 3000;
