@@ -97,10 +97,10 @@ io.on('connection', (socket) => {
       const target = gameRoom.gameState.players[targetId];
       if (target) {
         target.health -= damage;
-        target.score += 10;
+        gameRoom.gameState.players[socket.id].score += 10; // 擊中得分
         if (target.health <= 0) {
           const winner = targetId === gameRoom.player1.id ? gameRoom.player2.id : gameRoom.player1.id;
-          io.to(roomId).emit(' sağlıklı, {
+          io.to(roomId).emit('gameOver', {
             winner,
             scores: {
               [gameRoom.player1.id]: gameRoom.gameState.players[gameRoom.player1.id].score,
