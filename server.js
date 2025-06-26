@@ -1,207 +1,206 @@
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
-const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
     cors: {
-        origin: ['https://cadeid.github.io', 'http://localhost:3000'],
-        methods: ['GET', 'POST'],
-        credentials: true
+        origin: '*',
+        methods: ['GET', 'POST']
     }
 });
 
-app.use(cors({
-    origin: ['https://cadeid.github.io', 'http://localhost:3000'],
-    methods: ['GET', 'POST'],
-    credentials: true
-}));
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-    res.send('太空射擊遊戲後端運行中！');
-});
+// 存儲匹配中的玩家和遊戲房間
+const matchmakingQueue = [];
+const rooms = {};
 
-const waitingPlayers = [];
-const rooms = new Map();
-const bulletLifetime = 2000;
-const maxBulletsPerPlayer = 20;
-
-const generateRoomId = () => {
-    return Math.random().toString(36).substring(2, 10);
-};
+// 碰撞檢測函數
+function checkCollision(bullet, player) {
+    const dx = bullet.x - player.x;
+    const dy = bullet.y - player.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    return distance < 30; // 假設飛船半徑約為 30
+}
 
 io.on('connection', (socket) => {
-    console.log(`玩家 ${socket.id} 連線，來源: ${socket.handshake.headers.origin}`);
+    console.log(`玩家連線: ${socket.id}`);
 
-    socket.on('joinMatchmaking', ({ name }) => {
-        socket.playerName = name || '玩家';
-        waitingPlayers.push(socket);
-        console.log(`玩家 ${socket.id} (${socket.playerName}) 加入匹配隊列`);
+    // 玩家加入匹配
+    socket.on('joinMatchmaking', (data) => {
+        const player = {
+            id: socket.id,
+            name: data.name || '玩家',
+            x: 100,
+            y: 400,
+            angle: 0,
+            health: 100,
+            score: 0
+        };
+        matchmakingQueue.push(player);
 
-        if (waitingPlayers.length >= 2) {
-            const player1 = waitingPlayers.shift();
-            const player2 = waitingPlayers.shift();
-
-            const roomId = generateRoomId();
-            const gameState = {
+        if (matchmakingQueue.length >= 2) {
+            const player1 = matchmakingQueue.shift();
+            const player2 = matchmakingQueue.shift();
+            const roomId = `room_${Date.now()}`;
+            rooms[roomId] = {
                 players: {
-                    [player1.id]: { x: 100, y: 500, angle: 0, health: 100, score: 0, name: player1.playerName },
-                    [player2.id]: { x: 1000, y: 500, angle: 180, health: 100, score: 0, name: player2.playerName }
+                    [player1.id]: player1,
+                    [player2.id]: player2
                 },
                 bullets: []
             };
 
-            rooms.set(roomId, { player1, player2, gameState });
-            player1.join(roomId);
-            player2.join(roomId);
-            io.to(roomId).emit('matchFound', { roomId, players: gameState.players });
-            console.log(`房間 ${roomId} 創建，玩家 ${player1.id} (${player1.playerName}) 對 ${player2.id} (${player2.playerName})`);
-            startGameLoop(roomId);
+            // 通知玩家匹配成功
+            io.to(player1.id).emit('matchFound', {
+                roomId,
+                players: rooms[roomId].players
+            });
+            io.to(player2.id).emit('matchFound', {
+                roomId,
+                players: rooms[roomId].players
+            });
+
+            // 將玩家加入房間
+            socket.join(roomId);
+            io.to(player1.id).join(roomId);
+            io.to(player2.id).join(roomId);
         } else {
-            let progress = 0;
-            const matchmakingInterval = setInterval(() => {
-                progress += 2;
-                socket.emit('matchmakingProgress', { progress, timeLeft: Math.max(0, Math.floor(15 - (progress / 100) * 15)) });
-                if (progress >= 100 || !waitingPlayers.includes(socket)) {
-                    clearInterval(matchmakingInterval);
-                }
-            }, 100);
+            socket.emit('matchmakingProgress', { progress: 50, timeLeft: 15 });
         }
     });
 
-    socket.on('playerMove', ({ x, y, angle, name }) => {
-        const room = Array.from(rooms.entries()).find(([_, r]) => r.player1.id === socket.id || r.player2.id === socket.id);
-        if (room) {
-            const [roomId, gameRoom] = room;
-            gameRoom.gameState.players[socket.id] = { ...gameRoom.gameState.players[socket.id], x, y, angle, name: name || socket.playerName };
+    // 處理玩家移動
+    socket.on('playerMove', (data) => {
+        for (let roomId in rooms) {
+            if (rooms[roomId].players[socket.id]) {
+                rooms[roomId].players[socket.id].x = data.x;
+                rooms[roomId].players[socket.id].y = data.y;
+                rooms[roomId].players[socket.id].angle = data.angle;
+                rooms[roomId].players[socket.id].name = data.name;
+                io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
+            }
         }
     });
 
-    socket.on('playerShoot', ({ x, y, angle }) => {
-        const room = Array.from(rooms.entries()).find(([_, r]) => r.player1.id === socket.id || r.player2.id === socket.id);
-        if (room) {
-            const [roomId, gameRoom] = room;
-            const playerBullets = gameRoom.gameState.bullets.filter(b => b.owner === socket.id);
-            if (playerBullets.length >= maxBulletsPerPlayer) return;
-            
-            const bullet = {
-                owner: socket.id,
-                x,
-                y,
-                velocityX: Math.sin((angle * Math.PI) / 180) * 10,
-                velocityY: -Math.cos((angle * Math.PI) / 180) * 10,
-                createdAt: Date.now()
-            };
-            gameRoom.gameState.bullets.push(bullet);
-            console.log(`玩家 ${socket.id} (${socket.playerName}) 射擊: x=${x}, y=${y}, angle=${angle}`);
+    // 處理玩家射擊
+    socket.on('playerShoot', (data) => {
+        for (let roomId in rooms) {
+            if (rooms[roomId].players[socket.id]) {
+                const radians = data.angle * Math.PI / 180;
+                rooms[roomId].bullets.push({
+                    x: data.x,
+                    y: data.y,
+                    velocityX: Math.sin(radians) * 10,
+                    velocityY: -Math.cos(radians) * 10,
+                    owner: socket.id,
+                    createdAt: Date.now()
+                });
+                io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
+            }
         }
     });
 
-    socket.on('bulletHit', ({ targetId, damage }) => {
-        const room = Array.from(rooms.entries()).find(([_, r]) => r.player1.id === socket.id || r.player2.id === socket.id);
-        if (room) {
-            const [roomId, gameRoom] = room;
-            const target = gameRoom.gameState.players[targetId];
-            if (target) {
-                target.health = Math.max(0, target.health - damage);
-                gameRoom.gameState.players[socket.id].score += 10;
-                console.log(`子彈擊中: 目標 ${targetId} (${target.name}), 血量 ${target.health}, 得分 ${gameRoom.gameState.players[socket.id].score}`);
-                if (target.health <= 0) {
-                    const winner = targetId === gameRoom.player1.id ? gameRoom.player2.id : gameRoom.player1.id;
+    // 處理子彈命中
+    socket.on('bulletHit', (data) => {
+        for (let roomId in rooms) {
+            if (rooms[roomId].players[data.targetId]) {
+                rooms[roomId].players[data.targetId].health -= data.damage;
+                rooms[roomId].players[socket.id].score += 10;
+
+                if (rooms[roomId].players[data.targetId].health <= 0) {
+                    const winner = socket.id;
+                    const loser = data.targetId;
+                    const scores = {
+                        [winner]: rooms[roomId].players[winner].score,
+                        [loser]: rooms[roomId].players[loser].score
+                    };
                     io.to(roomId).emit('gameOver', {
                         winner,
-                        scores: {
-                            [gameRoom.player1.id]: gameRoom.gameState.players[gameRoom.player1.id].score,
-                            [gameRoom.player2.id]: gameRoom.gameState.players[gameRoom.player2.id].score
-                        },
-                        message: targetId === socket.id ? '你被擊敗！' : '你獲勝了！'
+                        scores,
+                        message: `${rooms[roomId].players[winner].name} 獲勝！`
                     });
-                    rooms.delete(roomId);
+                    delete rooms[roomId];
+                } else {
+                    io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
                 }
             }
         }
     });
 
+    // 處理玩家斷線
     socket.on('disconnect', () => {
-        console.log(`玩家 ${socket.id} (${socket.playerName}) 斷線`);
-        const room = Array.from(rooms.entries()).find(([_, r]) => r.player1.id === socket.id || r.player2.id === socket.id);
-        if (room) {
-            const [roomId, gameRoom] = room;
-            const opponent = socket.id === gameRoom.player1.id ? gameRoom.player2 : gameRoom.player1;
-            opponent.emit('gameOver', { 
-                winner: opponent.id, 
-                message: '對手斷線，你獲勝！',
-                scores: {
-                    [gameRoom.player1.id]: gameRoom.gameState.players[gameRoom.player1.id].score,
-                    [gameRoom.player2.id]: gameRoom.gameState.players[gameRoom.player2.id].score
+        console.log(`玩家斷線: ${socket.id}`);
+        for (let roomId in rooms) {
+            if (rooms[roomId].players[socket.id]) {
+                const opponentId = Object.keys(rooms[roomId].players).find(id => id !== socket.id);
+                if (opponentId) {
+                    io.to(opponentId).emit('gameOver', {
+                        winner: opponentId,
+                        scores: {
+                            [opponentId]: rooms[roomId].players[opponentId].score,
+                            [socket.id]: rooms[roomId].players[socket.id].score
+                        },
+                        message: '對手已斷線，你獲勝！'
+                    });
                 }
-            });
-            rooms.delete(roomId);
+                delete rooms[roomId];
+            }
         }
-        const index = waitingPlayers.indexOf(socket);
-        if (index !== -1) waitingPlayers.splice(index, 1);
+        const index = matchmakingQueue.findIndex(player => player.id === socket.id);
+        if (index !== -1) {
+            matchmakingQueue.splice(index, 1);
+        }
     });
-});
 
-function startGameLoop(roomId) {
-    const gameRoom = rooms.get(roomId);
-    if (!gameRoom) return;
+    // 定期更新遊戲狀態（處理子彈移動和碰撞）
+    setInterval(() => {
+        for (let roomId in rooms) {
+            const room = rooms[roomId];
+            const now = Date.now();
 
-    const updateInterval = setInterval(() => {
-        if (!rooms.has(roomId)) {
-            clearInterval(updateInterval);
-            return;
-        }
+            // 更新子彈位置並檢查碰撞
+            room.bullets = room.bullets.filter(bullet => now - bullet.createdAt < 2000);
+            room.bullets.forEach(bullet => {
+                bullet.x += bullet.velocityX;
+                bullet.y += bullet.velocityY;
 
-        const { gameState } = gameRoom;
-        for (let i = gameState.bullets.length - 1; i >= 0; i--) {
-            const bullet = gameState.bullets[i];
-            bullet.x += bullet.velocityX;
-            bullet.y += bullet.velocityY;
-            if (Date.now() - bullet.createdAt > bulletLifetime) {
-                gameState.bullets.splice(i, 1);
-                console.log(`移除子彈: x=${bullet.x}, y=${bullet.y}, 原因: 超時`);
-                continue;
-            }
-            if (bullet.x < 0 || bullet.x > 1200 || bullet.y < 0 || bullet.y > 800) {
-                gameState.bullets.splice(i, 1);
-                console.log(`移除子彈: x=${bullet.x}, y=${bullet.y}, 原因: 超出邊界`);
-                continue;
-            }
-            Object.keys(gameState.players).forEach(playerId => {
-                if (playerId !== bullet.owner) {
-                    const player = gameState.players[playerId];
-                    if (Math.hypot(bullet.x - player.x, bullet.y - player.y) < 30) {
-                        player.health = Math.max(0, player.health - 10);
-                        gameState.players[bullet.owner].score += 10;
-                        console.log(`後端子彈擊中: 玩家 ${playerId} (${player.name}), 血量 ${player.health}, 得分 ${gameState.players[bullet.owner].score}`);
-                        gameState.bullets.splice(i, 1);
-                        if (player.health <= 0) {
-                            const winner = playerId === gameRoom.player1.id ? gameRoom.player2.id : gameRoom.player1.id;
+                // 檢查子彈與玩家的碰撞
+                for (let playerId in room.players) {
+                    if (playerId !== bullet.owner && checkCollision(bullet, room.players[playerId])) {
+                        room.players[playerId].health -= 10;
+                        room.players[bullet.owner].score += 10;
+                        bullet.createdAt = 0; // 標記子彈為移除
+                        if (room.players[playerId].health <= 0) {
+                            const winner = bullet.owner;
+                            const loser = playerId;
+                            const scores = {
+                                [winner]: room.players[winner].score,
+                                [loser]: room.players[loser].score
+                            };
                             io.to(roomId).emit('gameOver', {
                                 winner,
-                                scores: {
-                                    [gameRoom.player1.id]: gameState.players[gameRoom.player1.id].score,
-                                    [gameRoom.player2.id]: gameState.players[gameRoom.player2.id].score
-                                },
-                                message: playerId === bullet.owner ? '你被擊敗！' : '你獲勝了！'
+                                scores,
+                                message: `${room.players[winner].name} 獲勝！`
                             });
-                            rooms.delete(roomId);
-                            clearInterval(updateInterval);
+                            delete rooms[roomId];
+                            return;
                         }
                     }
                 }
             });
+
+            // 移除過期的子彈
+            room.bullets = room.bullets.filter(bullet => now - bullet.createdAt < 2000);
+
+            // 廣播遊戲狀態
+            io.to(roomId).emit('gameStateUpdate', room);
         }
+    }, 1000 / 60); // 60 FPS
+});
 
-        io.to(roomId).emit('gameStateUpdate', gameState);
-    }, 1000 / 60);
-}
-
-const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`伺服器運行在端口 ${PORT}`);
+    console.log(`伺服器運行於端口 ${PORT}`);
 });
