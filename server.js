@@ -5,7 +5,7 @@ const io = require('socket.io')(server, {
     cors: {
         origin: [
             'http://localhost:5500',
-            'https://cade06150615.github.io' // Explicitly allow GitHub Pages
+            'https://cade06150615.github.io'
         ],
         methods: ['GET', 'POST'],
         credentials: true
@@ -22,18 +22,18 @@ app.get('/', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('Player connected:', socket.id, 'Origin:', socket.handshake.headers.origin);
+    console.log(`Player connected: ${socket.id}, Origin: ${socket.handshake.headers.origin}`);
 
     socket.on('joinMatchmaking', (data) => {
         players[socket.id] = {
-            x: Math.random() * 700 + 50, // Random initial position
+            x: Math.random() * 700 + 50,
             y: Math.random() * 500 + 50,
             angle: 0,
             health: 100,
             score: 0,
             name: data.name || 'Unknown Pilot'
         };
-        console.log('Player joined:', socket.id, data.name);
+        console.log(`Player joined: ${socket.id}, Name: ${data.name}`);
 
         let joined = false;
         for (const roomId in rooms) {
@@ -41,8 +41,9 @@ io.on('connection', (socket) => {
                 rooms[roomId].players[socket.id] = players[socket.id];
                 socket.join(roomId);
                 io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
+                io.to(roomId).emit('startGame'); // Fix 1: Signal to start game
                 joined = true;
-                console.log('Match found:', roomId, rooms[roomId].players);
+                console.log(`Match found: ${roomId}`, rooms[roomId].players);
                 break;
             }
         }
@@ -51,7 +52,7 @@ io.on('connection', (socket) => {
             rooms[roomId] = { players: { [socket.id]: players[socket.id] }, bullets: [] };
             socket.join(roomId);
             io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
-            console.log('New room created:', roomId);
+            console.log(`New room created: ${roomId}`);
         }
     });
 
@@ -63,7 +64,7 @@ io.on('connection', (socket) => {
             const roomId = Object.keys(rooms).find(room => rooms[room].players[socket.id]);
             if (roomId) {
                 io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
-                console.log('Player moved:', socket.id, data);
+                console.log(`Player moved: ${socket.id}`, data);
             }
         }
     });
@@ -74,12 +75,12 @@ io.on('connection', (socket) => {
             rooms[roomId].bullets = rooms[roomId].bullets || [];
             rooms[roomId].bullets.push(bullet);
             io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
-            console.log('Bullet fired:', socket.id, bullet);
+            console.log(`Bullet fired: ${socket.id}`, bullet);
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('Player disconnected:', socket.id);
+        console.log(`Player disconnected: ${socket.id}`);
         for (const roomId in rooms) {
             if (rooms[roomId].players[socket.id]) {
                 delete rooms[roomId].players[socket.id];
@@ -91,14 +92,13 @@ io.on('connection', (socket) => {
                         winnerId,
                         scores: rooms[roomId].players
                     });
-                    console.log('Game ended due to disconnect:', roomId, 'Winner:', winnerId);
+                    console.log(`Game ended due to disconnect: ${roomId}, Winner: ${winnerId}`);
                 }
             }
         }
         delete players[socket.id];
     });
 
-    // Collision detection and game loop
     setInterval(() => {
         for (const roomId in rooms) {
             const room = rooms[roomId];
@@ -128,7 +128,7 @@ io.on('connection', (socket) => {
                                 winnerId,
                                 scores: room.players
                             });
-                            console.log('Game ended:', roomId, 'Winner:', winnerId);
+                            console.log(`Game ended: ${roomId}, Winner: ${winnerId}`);
                             delete rooms[roomId];
                             break;
                         }
@@ -140,6 +140,6 @@ io.on('connection', (socket) => {
     }, 1000 / 60);
 });
 
-server.listen(process.env.PORT || 3000, () => {
-    console.log('Server running on port', process.env.PORT || 3000);
+server.listen(process.env.PORT || 10000, () => {
+    console.log('Server running on port', process.env.PORT || 10000);
 });
