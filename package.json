@@ -12,6 +12,6 @@
     },
     "license": "MIT", // **修改處 3**：添加 license 欄位
     "engines": {
-        "node": "18.x" // **修改處 2**：指定 Node.js 18.x（Render 支援）
+        "node": "18.x" // **修改處 2**：指定 Node.js 18.x
     }
 }
