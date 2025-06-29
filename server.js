@@ -10,6 +10,8 @@ const io = require('socket.io')(server, {
 
 const rooms = {};
 const players = {};
+const bulletSpeed = 15;
+const bulletLifetime = 2000;
 
 app.get('/', (req, res) => {
     res.send('太空射擊遊戲後端運行中');
@@ -19,7 +21,6 @@ io.on('connection', (socket) => {
     console.log('玩家連線:', socket.id); // 修改：添加連線日誌
 
     socket.on('joinMatchmaking', (data) => {
-        // 初始化玩家
         players[socket.id] = {
             x: 100, // 修改：明確設置初始 X 座標
             y: 300, // 修改：明確設置初始 Y 座標
@@ -30,7 +31,6 @@ io.on('connection', (socket) => {
         };
         console.log('玩家加入:', socket.id, data.name); // 修改：添加日誌
 
-        // 配對邏輯
         let joined = false;
         for (const roomId in rooms) {
             if (Object.keys(rooms[roomId].players).length < 2) {
@@ -82,18 +82,60 @@ io.on('connection', (socket) => {
                 if (Object.keys(rooms[roomId].players).length === 0) {
                     delete rooms[roomId];
                 } else {
+                    const winnerId = Object.keys(rooms[roomId].players)[0];
                     io.to(roomId).emit('gameOver', {
-                        winnerId: Object.keys(rooms[roomId].players)[0],
+                        winnerId,
                         scores: rooms[roomId].players
                     });
+                    console.log('遊戲結束，因玩家斷線:', roomId, winnerId); // 修改：添加日誌
                 }
             }
         }
         delete players[socket.id];
     });
+
+    // 修改：添加碰撞檢測和遊戲邏輯
+    setInterval(() => {
+        for (const roomId in rooms) {
+            const room = rooms[roomId];
+            const now = Date.now();
+            room.bullets = room.bullets.filter(b => now - b.time < bulletLifetime);
+
+            for (const bullet of room.bullets) {
+                bullet.x += Math.cos((bullet.angle * Math.PI) / 180) * bulletSpeed;
+                bullet.y += Math.sin((bullet.angle * Math.PI) / 180) * bulletSpeed;
+
+                for (const playerId in room.players) {
+                    if (playerId === bullet.id.split('-')[0]) continue;
+                    const player = room.players[playerId];
+                    const dx = bullet.x - player.x;
+                    const dy = bullet.y - player.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < 20) {
+                        player.health -= 10;
+                        room.bullets = room.bullets.filter(b => b !== bullet);
+                        const shooterId = bullet.id.split('-')[0];
+                        if (room.players[shooterId]) {
+                            room.players[shooterId].score += 10;
+                        }
+                        if (player.health <= 0) {
+                            const winnerId = Object.keys(room.players).find(id => id !== playerId);
+                            io.to(roomId).emit('gameOver', {
+                                winnerId,
+                                scores: room.players
+                            });
+                            console.log('遊戲結束:', roomId, '贏家:', winnerId); // 修改：添加日誌
+                            delete rooms[roomId];
+                            break;
+                        }
+                    }
+                }
+            }
+            io.to(roomId).emit('gameStateUpdate', room);
+        }
+    }, 1000 / 60);
 });
 
-// 修改：確保伺服器監聽正確端口
 server.listen(process.env.PORT || 3000, () => {
     console.log('伺服器運行於端口', process.env.PORT || 3000);
 });
