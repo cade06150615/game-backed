@@ -4,11 +4,11 @@
     "description": "Backend for Space Shooter game",
     "main": "server.js",
     "scripts": {
-        "start": "node server.js" // 修改：添加啟動腳本
+        "start": "node server.js" // **修改處 2**：添加啟動腳本
     },
     "dependencies": {
         "express": "^4.18.2",
         "socket.io": "^4.7.2"
     },
-    "license": "MIT" // 修改：添加 license 欄位
+    "license": "MIT" // **修改處 1**：添加 license 欄位
 }
