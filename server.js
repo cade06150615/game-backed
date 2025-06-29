@@ -3,8 +3,12 @@ const app = express();
 const server = require('http').createServer(app);
 const io = require('socket.io')(server, {
     cors: {
-        origin: ['http://localhost:5500', 'https://your-username.github.io'], // **修改處 2**：替換為你的 GitHub Pages 域名
-        methods: ['GET', 'POST']
+        origin: [
+            'http://localhost:5500',
+            'https://cade06150615.github.io' // Explicitly allow GitHub Pages
+        ],
+        methods: ['GET', 'POST'],
+        credentials: true
     }
 });
 
@@ -14,22 +18,22 @@ const bulletSpeed = 15;
 const bulletLifetime = 2000;
 
 app.get('/', (req, res) => {
-    res.send('太空射擊遊戲後端運行中');
+    res.send('Space Shooter backend running');
 });
 
 io.on('connection', (socket) => {
-    console.log('玩家連線:', socket.id); // **修改處 3**：添加日誌
+    console.log('Player connected:', socket.id, 'Origin:', socket.handshake.headers.origin);
 
     socket.on('joinMatchmaking', (data) => {
         players[socket.id] = {
-            x: 100, // **修改處 1**：初始 X 座標
-            y: 300, // **修改處 1**：初始 Y 座標
+            x: Math.random() * 700 + 50, // Random initial position
+            y: Math.random() * 500 + 50,
             angle: 0,
             health: 100,
             score: 0,
-            name: data.name || '未知艦長'
+            name: data.name || 'Unknown Pilot'
         };
-        console.log('玩家加入:', socket.id, data.name); // **修改處 3**
+        console.log('Player joined:', socket.id, data.name);
 
         let joined = false;
         for (const roomId in rooms) {
@@ -38,7 +42,7 @@ io.on('connection', (socket) => {
                 socket.join(roomId);
                 io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
                 joined = true;
-                console.log('配對成功:', roomId, rooms[roomId].players); // **修改處 3**
+                console.log('Match found:', roomId, rooms[roomId].players);
                 break;
             }
         }
@@ -47,7 +51,7 @@ io.on('connection', (socket) => {
             rooms[roomId] = { players: { [socket.id]: players[socket.id] }, bullets: [] };
             socket.join(roomId);
             io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
-            console.log('新房間創建:', roomId); // **修改處 3**
+            console.log('New room created:', roomId);
         }
     });
 
@@ -58,8 +62,8 @@ io.on('connection', (socket) => {
             players[socket.id].angle = data.angle;
             const roomId = Object.keys(rooms).find(room => rooms[room].players[socket.id]);
             if (roomId) {
-                io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // **修改處 4**：發送完整狀態
-                console.log('玩家移動:', socket.id, data); // **修改處 3**
+                io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
+                console.log('Player moved:', socket.id, data);
             }
         }
     });
@@ -70,12 +74,12 @@ io.on('connection', (socket) => {
             rooms[roomId].bullets = rooms[roomId].bullets || [];
             rooms[roomId].bullets.push(bullet);
             io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
-            console.log('子彈發射:', socket.id, bullet); // **修改處 3**
+            console.log('Bullet fired:', socket.id, bullet);
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('玩家斷線:', socket.id); // **修改處 3**
+        console.log('Player disconnected:', socket.id);
         for (const roomId in rooms) {
             if (rooms[roomId].players[socket.id]) {
                 delete rooms[roomId].players[socket.id];
@@ -87,14 +91,14 @@ io.on('connection', (socket) => {
                         winnerId,
                         scores: rooms[roomId].players
                     });
-                    console.log('遊戲結束，因玩家斷線:', roomId, winnerId); // **修改處 3**
+                    console.log('Game ended due to disconnect:', roomId, 'Winner:', winnerId);
                 }
             }
         }
         delete players[socket.id];
     });
 
-    // **修改處 5**：碰撞檢測
+    // Collision detection and game loop
     setInterval(() => {
         for (const roomId in rooms) {
             const room = rooms[roomId];
@@ -124,7 +128,7 @@ io.on('connection', (socket) => {
                                 winnerId,
                                 scores: room.players
                             });
-                            console.log('遊戲結束:', roomId, '贏家:', winnerId); // **修改處 3**
+                            console.log('Game ended:', roomId, 'Winner:', winnerId);
                             delete rooms[roomId];
                             break;
                         }
@@ -137,5 +141,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(process.env.PORT || 3000, () => {
-    console.log('伺服器運行於端口', process.env.PORT || 3000);
+    console.log('Server running on port', process.env.PORT || 3000);
 });
