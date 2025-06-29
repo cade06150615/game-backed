@@ -3,7 +3,7 @@ const app = express();
 const server = require('http').createServer(app);
 const io = require('socket.io')(server, {
     cors: {
-        origin: ['http://localhost:5500', 'https://your-username.github.io'], // **修改處 2**：添加你的 GitHub Pages 域名
+        origin: ['http://localhost:5500', 'https://your-username.github.io'], // **修改處 2**：替換為你的 GitHub Pages 域名
         methods: ['GET', 'POST']
     }
 });
@@ -18,18 +18,18 @@ app.get('/', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('玩家連線:', socket.id); // **修改處 3**：添加連線日誌
+    console.log('玩家連線:', socket.id); // **修改處 3**：添加日誌
 
     socket.on('joinMatchmaking', (data) => {
         players[socket.id] = {
-            x: 100, // **修改處 1**：明確設置初始 X 座標
-            y: 300, // **修改處 1**：明確設置初始 Y 座標
+            x: 100, // **修改處 1**：初始 X 座標
+            y: 300, // **修改處 1**：初始 Y 座標
             angle: 0,
             health: 100,
             score: 0,
             name: data.name || '未知艦長'
         };
-        console.log('玩家加入:', socket.id, data.name); // **修改處 3**：添加日誌
+        console.log('玩家加入:', socket.id, data.name); // **修改處 3**
 
         let joined = false;
         for (const roomId in rooms) {
@@ -38,7 +38,7 @@ io.on('connection', (socket) => {
                 socket.join(roomId);
                 io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
                 joined = true;
-                console.log('配對成功:', roomId, rooms[roomId].players); // **修改處 3**：添加日誌
+                console.log('配對成功:', roomId, rooms[roomId].players); // **修改處 3**
                 break;
             }
         }
@@ -47,7 +47,7 @@ io.on('connection', (socket) => {
             rooms[roomId] = { players: { [socket.id]: players[socket.id] }, bullets: [] };
             socket.join(roomId);
             io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
-            console.log('新房間創建:', roomId); // **修改處 3**：添加日誌
+            console.log('新房間創建:', roomId); // **修改處 3**
         }
     });
 
@@ -58,8 +58,8 @@ io.on('connection', (socket) => {
             players[socket.id].angle = data.angle;
             const roomId = Object.keys(rooms).find(room => rooms[room].players[socket.id]);
             if (roomId) {
-                io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // **修改處 4**：發送完整遊戲狀態
-                console.log('玩家移動:', socket.id, data); // **修改處 3**：添加日誌
+                io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // **修改處 4**：發送完整狀態
+                console.log('玩家移動:', socket.id, data); // **修改處 3**
             }
         }
     });
@@ -70,12 +70,12 @@ io.on('connection', (socket) => {
             rooms[roomId].bullets = rooms[roomId].bullets || [];
             rooms[roomId].bullets.push(bullet);
             io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
-            console.log('子彈發射:', socket.id, bullet); // **修改處 3**：添加日誌
+            console.log('子彈發射:', socket.id, bullet); // **修改處 3**
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('玩家斷線:', socket.id); // **修改處 3**：添加斷線日誌
+        console.log('玩家斷線:', socket.id); // **修改處 3**
         for (const roomId in rooms) {
             if (rooms[roomId].players[socket.id]) {
                 delete rooms[roomId].players[socket.id];
@@ -87,15 +87,14 @@ io.on('connection', (socket) => {
                         winnerId,
                         scores: rooms[roomId].players
                     });
-robin);
-                    console.log('遊戲結束，因玩家斷線:', roomId, winnerId); // **修改處 3**：添加日誌
+                    console.log('遊戲結束，因玩家斷線:', roomId, winnerId); // **修改處 3**
                 }
             }
         }
         delete players[socket.id];
     });
 
-    // **修改處 5**：添加碰撞檢測和遊戲邏輯
+    // **修改處 5**：碰撞檢測
     setInterval(() => {
         for (const roomId in rooms) {
             const room = rooms[roomId];
@@ -125,7 +124,7 @@ robin);
                                 winnerId,
                                 scores: room.players
                             });
-                            console.log('遊戲結束:', roomId, '贏家:', winnerId); // **修改處 3**：添加日誌
+                            console.log('遊戲結束:', roomId, '贏家:', winnerId); // **修改處 3**
                             delete rooms[roomId];
                             break;
                         }
@@ -138,5 +137,5 @@ robin);
 });
 
 server.listen(process.env.PORT || 3000, () => {
-    console.log('伺服器運行於端口', process.env.PORT || 3000); // **修改處 6**：支援 Render 動態端口
+    console.log('伺服器運行於端口', process.env.PORT || 3000);
 });
