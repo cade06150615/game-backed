@@ -16,7 +16,7 @@ const rooms = {};
 const players = {};
 const bulletSpeed = 15;
 const bulletLifetime = 2000;
-const disconnectTimeout = 30000; // 30s grace period for reconnect
+const disconnectTimeout = 60000; // Fix 2: 60s grace period
 
 app.get('/', (req, res) => {
     res.send('Space Shooter backend running');
@@ -42,9 +42,9 @@ io.on('connection', (socket) => {
             if (Object.keys(rooms[roomId].players).length < 2) {
                 rooms[roomId].players[socket.id] = players[socket.id];
                 socket.join(roomId);
-                io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
-                io.to(roomId).emit('startGame');
-                io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // Fix 2: Immediate state update
+                io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players, playerId: socket.id });
+                io.to(roomId).emit('startGame', { playerId: socket.id });
+                io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // Fix 3: Immediate state update
                 console.log(`Match found: ${roomId}`, rooms[roomId].players);
                 joined = true;
                 break;
@@ -54,13 +54,13 @@ io.on('connection', (socket) => {
             const roomId = `room-${Object.keys(rooms).length + 1}`;
             rooms[roomId] = { players: { [socket.id]: players[socket.id] }, bullets: [] };
             socket.join(roomId);
-            io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players });
+            io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players, playerId: socket.id });
             console.log(`New room created: ${roomId}`);
         }
     });
 
     socket.on('playerMove', (data) => {
-        if (players[socket.id]) {
+        if (players[socket.id] && !players[socket.id].disconnected) {
             players[socket.id].x = data.x;
             players[socket.id].y = data.y;
             players[socket.id].angle = data.angle;
@@ -87,6 +87,7 @@ io.on('connection', (socket) => {
         const roomId = Object.keys(rooms).find(room => rooms[room].players[socket.id]);
         if (roomId) {
             players[socket.id].disconnected = true;
+            io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // Update state on disconnect
             setTimeout(() => {
                 if (players[socket.id]?.disconnected) {
                     delete rooms[roomId].players[socket.id];
@@ -94,12 +95,14 @@ io.on('connection', (socket) => {
                         delete rooms[roomId];
                         console.log(`Room deleted: ${roomId}`);
                     } else {
-                        const winnerId = Object.keys(rooms[roomId].players)[0];
-                        io.to(roomId).emit('gameOver', {
-                            winnerId,
-                            scores: rooms[roomId].players
-                        });
-                        console.log(`Game ended due to disconnect: ${roomId}, Winner: ${winnerId}`);
+                        const winnerId = Object.keys(rooms[roomId].players).find(id => !rooms[roomId].players[id].disconnected);
+                        if (winnerId) {
+                            io.to(roomId).emit('gameOver', {
+                                winnerId,
+                                scores: rooms[roomId].players
+                            });
+                            console.log(`Game ended due to disconnect: ${roomId}, Winner: ${winnerId}`);
+                        }
                     }
                     delete players[socket.id];
                 }
