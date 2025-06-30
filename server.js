@@ -15,8 +15,7 @@ const io = require('socket.io')(server, {
 const rooms = {};
 const players = {};
 const bulletSpeed = 15;
-const bulletLifetime = 2000;
-const disconnectTimeout = 60000;
+const bulletLifetime = 10000; // Increased to 10s for visibility
 
 app.get('/', (req, res) => {
     res.send('Space Shooter backend running');
@@ -88,7 +87,7 @@ io.on('connection', (socket) => {
             rooms[roomId].bullets = rooms[roomId].bullets || [];
             rooms[roomId].bullets.push(bullet);
             io.to(roomId).emit('gameStateUpdate', { ...rooms[roomId], playerId: socket.id });
-            console.log(`Bullet fired: ${socket.id}`, bullet);
+            console.log(`Bullet fired in ${roomId}:`, bullet);
         }
     });
 
@@ -116,7 +115,7 @@ io.on('connection', (socket) => {
                     }
                     delete players[socket.id];
                 }
-            }, disconnectTimeout);
+            }, 60000);
         }
     });
 
@@ -158,7 +157,7 @@ io.on('connection', (socket) => {
                 }
             }
             io.to(roomId).emit('gameStateUpdate', { ...room, playerId: socket.id });
-            console.log(`Game state update sent to ${roomId}`, room);
+            console.log(`Game state update sent to ${roomId}:`, { players: room.players, bullets: room.bullets });
         }
     }, 1000 / 60);
 });
