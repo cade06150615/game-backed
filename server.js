@@ -15,7 +15,7 @@ const io = require('socket.io')(server, {
 const rooms = {};
 const players = {};
 const bulletSpeed = 15;
-const bulletLifetime = 10000; // Increased to 10s for visibility
+const bulletLifetime = 15000; // Increased to 15s for visibility
 
 app.get('/', (req, res) => {
     res.send('Space Shooter backend running');
