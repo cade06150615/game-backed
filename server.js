@@ -16,7 +16,7 @@ const rooms = {};
 const players = {};
 const bulletSpeed = 15;
 const bulletLifetime = 2000;
-const disconnectTimeout = 60000; // Fix 2: 60s grace period
+const disconnectTimeout = 60000;
 
 app.get('/', (req, res) => {
     res.send('Space Shooter backend running');
@@ -44,7 +44,7 @@ io.on('connection', (socket) => {
                 socket.join(roomId);
                 io.to(roomId).emit('matchFound', { roomId, players: rooms[roomId].players, playerId: socket.id });
                 io.to(roomId).emit('startGame', { playerId: socket.id });
-                io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // Fix 3: Immediate state update
+                io.to(roomId).emit('gameStateUpdate', { ...rooms[roomId], playerId: socket.id });
                 console.log(`Match found: ${roomId}`, rooms[roomId].players);
                 joined = true;
                 break;
@@ -59,6 +59,16 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('rejoinGame', (data) => {
+        const { roomId, playerId } = data;
+        if (rooms[roomId] && players[playerId] && players[playerId].disconnected) {
+            players[playerId].disconnected = false;
+            socket.join(roomId);
+            io.to(roomId).emit('gameStateUpdate', { ...rooms[roomId], playerId: socket.id });
+            console.log(`Player rejoined: ${playerId} in ${roomId}`);
+        }
+    });
+
     socket.on('playerMove', (data) => {
         if (players[socket.id] && !players[socket.id].disconnected) {
             players[socket.id].x = data.x;
@@ -66,7 +76,7 @@ io.on('connection', (socket) => {
             players[socket.id].angle = data.angle;
             const roomId = Object.keys(rooms).find(room => rooms[room].players[socket.id]);
             if (roomId) {
-                io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
+                io.to(roomId).emit('gameStateUpdate', { ...rooms[roomId], playerId: socket.id });
                 console.log(`Player moved: ${socket.id}`, data);
             }
         }
@@ -77,7 +87,7 @@ io.on('connection', (socket) => {
         if (roomId) {
             rooms[roomId].bullets = rooms[roomId].bullets || [];
             rooms[roomId].bullets.push(bullet);
-            io.to(roomId).emit('gameStateUpdate', rooms[roomId]);
+            io.to(roomId).emit('gameStateUpdate', { ...rooms[roomId], playerId: socket.id });
             console.log(`Bullet fired: ${socket.id}`, bullet);
         }
     });
@@ -87,7 +97,7 @@ io.on('connection', (socket) => {
         const roomId = Object.keys(rooms).find(room => rooms[room].players[socket.id]);
         if (roomId) {
             players[socket.id].disconnected = true;
-            io.to(roomId).emit('gameStateUpdate', rooms[roomId]); // Update state on disconnect
+            io.to(roomId).emit('gameStateUpdate', { ...rooms[roomId], playerId: socket.id });
             setTimeout(() => {
                 if (players[socket.id]?.disconnected) {
                     delete rooms[roomId].players[socket.id];
@@ -147,7 +157,7 @@ io.on('connection', (socket) => {
                     }
                 }
             }
-            io.to(roomId).emit('gameStateUpdate', room);
+            io.to(roomId).emit('gameStateUpdate', { ...room, playerId: socket.id });
             console.log(`Game state update sent to ${roomId}`, room);
         }
     }, 1000 / 60);
