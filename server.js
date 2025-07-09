@@ -1,4 +1,3 @@
-// server.js - Express 後端
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -13,18 +12,17 @@ app.use(bodyParser.json());
 let marketItems = [];
 let inviteRooms = {};
 
-// 取得市場物品
+// 市場取得
 app.get('/api/market', (req, res) => {
   res.json(marketItems);
 });
 
-// 上架物品
+// 市場上架
 app.post('/api/market', (req, res) => {
-  const { name, rarity, price, id } = req.body;
-  if (!name || !rarity || !price || !id) {
+  const { id, name, rarity, price } = req.body;
+  if (!id || !name || !rarity || !price) {
     return res.status(400).json({ success: false, msg: '資料不完整' });
   }
-  // 避免重複上架同一物品
   if (marketItems.find(item => item.id === id)) {
     return res.status(400).json({ success: false, msg: '物品已上架' });
   }
@@ -32,7 +30,7 @@ app.post('/api/market', (req, res) => {
   res.json({ success: true });
 });
 
-// 買下物品
+// 市場購買
 app.post('/api/market/buy', (req, res) => {
   const { id } = req.body;
   const index = marketItems.findIndex(item => item.id === id);
