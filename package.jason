@@ -1,7 +1,7 @@
 {
-  "name": "monkey-lootbox-server",
+  "name": "monkey-lootbox",
   "version": "1.0.0",
-  "description": "後端API服務 - 猴子開箱遊戲",
+  "description": "猴子開箱遊戲後端服務",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
