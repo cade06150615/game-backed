@@ -1,4 +1,4 @@
-// server.js（後端主程式）
+// server.js - Express 後端
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -10,40 +10,45 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// 模擬資料庫
 let marketItems = [];
 let inviteRooms = {};
 
-// [API] 取得市場物品
+// 取得市場物品
 app.get('/api/market', (req, res) => {
   res.json(marketItems);
 });
 
-// [API] 上架物品
+// 上架物品
 app.post('/api/market', (req, res) => {
-  const item = req.body;
-  item.id = uuidv4();
-  marketItems.push(item);
-  res.json({ success: true, item });
+  const { name, rarity, price, id } = req.body;
+  if (!name || !rarity || !price || !id) {
+    return res.status(400).json({ success: false, msg: '資料不完整' });
+  }
+  // 避免重複上架同一物品
+  if (marketItems.find(item => item.id === id)) {
+    return res.status(400).json({ success: false, msg: '物品已上架' });
+  }
+  marketItems.push({ id, name, rarity, price });
+  res.json({ success: true });
 });
 
-// [API] 購買物品
+// 買下物品
 app.post('/api/market/buy', (req, res) => {
   const { id } = req.body;
-  const idx = marketItems.findIndex(i => i.id === id);
-  if (idx === -1) return res.status(404).json({ success: false, msg: '找不到物品' });
-  const item = marketItems.splice(idx, 1)[0];
-  res.json({ success: true, item });
+  const index = marketItems.findIndex(item => item.id === id);
+  if (index === -1) return res.status(404).json({ success: false, msg: '物品不存在' });
+  const boughtItem = marketItems.splice(index, 1)[0];
+  res.json({ success: true, item: boughtItem });
 });
 
-// [API] 建立邀請房間
+// 建立邀請房間
 app.post('/api/invite/create', (req, res) => {
   const roomId = uuidv4();
   inviteRooms[roomId] = { users: [] };
   res.json({ success: true, roomId });
 });
 
-// [API] 加入邀請房間
+// 加入邀請房間
 app.post('/api/invite/join', (req, res) => {
   const { roomId, userName } = req.body;
   if (!inviteRooms[roomId]) return res.status(404).json({ success: false, msg: '房間不存在' });
@@ -52,5 +57,5 @@ app.post('/api/invite/join', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
