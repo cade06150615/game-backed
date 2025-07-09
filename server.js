@@ -9,51 +9,36 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
+// 範例資料：市場商品
 let marketItems = [];
-let inviteRooms = {};
 
-// 市場取得
+// 取得市場商品
 app.get('/api/market', (req, res) => {
   res.json(marketItems);
 });
 
-// 市場上架
+// 上架商品
 app.post('/api/market', (req, res) => {
   const { id, name, rarity, price } = req.body;
   if (!id || !name || !rarity || !price) {
     return res.status(400).json({ success: false, msg: '資料不完整' });
   }
   if (marketItems.find(item => item.id === id)) {
-    return res.status(400).json({ success: false, msg: '物品已上架' });
+    return res.status(400).json({ success: false, msg: '商品已存在' });
   }
   marketItems.push({ id, name, rarity, price });
   res.json({ success: true });
 });
 
-// 市場購買
+// 買商品
 app.post('/api/market/buy', (req, res) => {
   const { id } = req.body;
   const index = marketItems.findIndex(item => item.id === id);
-  if (index === -1) return res.status(404).json({ success: false, msg: '物品不存在' });
+  if (index === -1) return res.status(404).json({ success: false, msg: '商品不存在' });
   const boughtItem = marketItems.splice(index, 1)[0];
   res.json({ success: true, item: boughtItem });
 });
 
-// 建立邀請房間
-app.post('/api/invite/create', (req, res) => {
-  const roomId = uuidv4();
-  inviteRooms[roomId] = { users: [] };
-  res.json({ success: true, roomId });
-});
-
-// 加入邀請房間
-app.post('/api/invite/join', (req, res) => {
-  const { roomId, userName } = req.body;
-  if (!inviteRooms[roomId]) return res.status(404).json({ success: false, msg: '房間不存在' });
-  inviteRooms[roomId].users.push(userName || '匿名');
-  res.json({ success: true, room: inviteRooms[roomId] });
-});
-
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
